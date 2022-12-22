@@ -23,7 +23,7 @@ int main(int argc, char* argv[]) {
 		execvp_array(argv);
 	}
 	std::string_view const verb(argv[1]);
-	if (verb == "run") {
+	if (verb == "run" || verb == "shell") {
 		auto const childPid = fork();
 		if (childPid < 0) {
 			fprintf(stderr, "fork failed\n");
@@ -35,7 +35,10 @@ int main(int argc, char* argv[]) {
 				(char*)"build",
 				(char*)"--no-link"
 			};
-			for (int i = 2; i < argc && argv[i] != nullptr && std::string(argv[i]) != "--"; ++i) {
+			for (int i = 2; i < argc && argv[i] != nullptr; ++i) {
+				std::string_view const arg(argv[i]);
+				if (arg == "--" || arg == "--command")
+					break;
 				args.push_back(argv[i]);
 			}
 			execvp_vector(std::move(args));
