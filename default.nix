@@ -10,19 +10,9 @@ stdenv.mkDerivation {
     version
     ;
   pname = "nix-monitored";
-  meta = nix.meta // { mainProgram = "nix"; };
   src = ./.;
-  buildPhase = ''
-    mkdir -p $out/bin
-    ''${CXX} \
-      ''${CXXFLAGS} \
-      -std=c++17 \
-      -O2 \
-      -DPATH='"${nix}/bin:${nix-output-monitor}/bin"' \
-      -o $out/bin/nix \
-      $src/monitored.cc
-  '';
-  installPhase = ''
+  makeFlags = [ "BIN=nix" "BINDIR=$(out)/bin" "NIXPATH=${lib.makeBinPath [ nix nix-output-monitor ]}" ];
+  postInstall = ''
     ln -s $out/bin/nix $out/bin/nix-build
     ln -s $out/bin/nix $out/bin/nix-shell
     ls ${nix} | while read d; do
@@ -41,5 +31,15 @@ stdenv.mkDerivation {
     }
   '';
   dontFixup = true;
+
+  meta = with lib; {
+    description = "A drop-in replacement for Nix that pipes its output through Nix Output Monitor";
+    homepage = "https://github.com/ners/nix-monitored";
+    license = licenses.mit;
+    mainProgram = "nix";
+    maintainers = with maintainers; [ ners ];
+    platforms = platforms.unix;
+    inherit (nix.meta) outputsToInstall;
+  };
 }
 
