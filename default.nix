@@ -33,7 +33,7 @@ stdenv.mkDerivation {
   dontFixup = true;
 
   meta = with lib; {
-    description = "A drop-in replacement for Nix that pipes its output through Nix Output Monitor";
+    description = "A transparent wrapper around Nix that pipes its output through Nix Output Monitor";
     homepage = "https://github.com/ners/nix-monitored";
     license = licenses.mit;
     mainProgram = "nix";
