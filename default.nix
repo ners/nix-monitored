@@ -5,13 +5,16 @@
 }:
 
 stdenv.mkDerivation {
-  inherit (nix)
-    outputs
-    version
-    ;
   pname = "nix-monitored";
+  inherit (nix) version outputs;
   src = ./.;
-  makeFlags = [ "BIN=nix" "BINDIR=$(out)/bin" "NIXPATH=${lib.makeBinPath [ nix nix-output-monitor ]}" ];
+
+  makeFlags = [
+    "BIN=nix"
+    "BINDIR=$(out)/bin"
+    "NIXPATH=${lib.makeBinPath [ nix nix-output-monitor ]}"
+  ];
+
   postInstall = ''
     ln -s $out/bin/nix $out/bin/nix-build
     ln -s $out/bin/nix $out/bin/nix-shell
@@ -21,15 +24,17 @@ stdenv.mkDerivation {
     ls ${nix}/bin | while read b; do
       [ -e $out/bin/$b ] || ln -s ${nix}/bin/$b $out/bin/$b
     done
-    ${ lib.pipe nix.outputs
-        [
-          (builtins.map (o: ''
-            [ -e "''$${o}" ] || ln -s ${nix.${o}} ''$${o}
-          ''))
-          (builtins.concatStringsSep "\n")
-        ]
-    }
-  '';
+  '' + lib.pipe nix.outputs [
+    (builtins.map (o: ''
+      [ -e "''$${o}" ] || ln -s ${nix.${o}} ''$${o}
+    ''))
+    (builtins.concatStringsSep "\n")
+  ];
+
+  # Nix will try to fixup the propagated outputs (e.g. nix-dev), to which it has
+  # no write permission when building this derivation.
+  # We don't actually need any fixup, as the derivation we are building is a native Nix build,
+  # and all the propagated outputs have already been fixed up for the Nix derivation.
   dontFixup = true;
 
   meta = with lib; {
