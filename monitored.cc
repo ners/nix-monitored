@@ -11,14 +11,13 @@
 #include <vector>
 
 #ifndef NDEBUG
-#define debug std::cout
+#define debug std::cerr
 #else
-#define debug false && std::cout
+#define debug false && std::cerr
 #endif
 
 void execvp_array(char* args[])
 {
-	args[0] = basename(args[0]);
 	debug << "execvp:";
 	for (int i = 0; args[i] != nullptr; ++i)
 	{
@@ -76,9 +75,28 @@ int main(int argc, char* argv[])
 	{
 		execvp_array(argv);
 	}
+	argv[0] = basename(argv[0]);
+	debug << "argv:";
+	for (int i = 0; argv[i] != nullptr; ++i)
+	{
+		debug << " " << argv[i];
+	}
+	debug << std::endl;
+	std::string_view const command(argv[0]);
 	std::string_view const verb(argv[1]);
-	debug << "verb: " << verb << std::endl;
-	if (verb == "run" || verb == "shell")
+	if (command == "nix-build" || command == "nix-shell")
+	{
+		argv[0][1] = 'o';
+		argv[0][2] = 'm';
+		execvp_array(argv);
+	}
+	if (verb == "build" || verb == "shell" || verb == "develop" ||
+	    verb == "--version")
+	{
+		argv[0] = (char*)"nom";
+		execvp_array(argv);
+	}
+	if (verb == "run")
 	{
 		fork_with(
 		    [&]()
@@ -103,10 +121,6 @@ int main(int argc, char* argv[])
 	if (verb == "repl" || verb == "flake" || verb == "--help")
 	{
 		execvp_array(argv);
-	}
-	if (verb == "--version")
-	{
-		execvp_vector({(char*)"nom", (char*)"--version"});
 	}
 	auto const [nix_stderr_out, nix_stderr_in] = make_pipe();
 	fork_with(
