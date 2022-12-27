@@ -6,7 +6,7 @@
 
 stdenv.mkDerivation (finalAttrs: {
   pname = "nix-monitored";
-  version = nix.version + lib.optionalString (finalAttrs.src ? version) "-${finalAttrs.src.version}";
+  version = nix.version + lib.optionalString (finalAttrs.src ? rev) "-${builtins.substring 0 7 finalAttrs.src.rev}";
   inherit (nix) outputs;
   src = ./.;
 
