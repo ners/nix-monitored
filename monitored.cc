@@ -1,5 +1,8 @@
+#include <array>
 #include <functional>
+#include <iostream>
 #include <libgen.h>
+#include <optional>
 #include <stdlib.h>
 #include <string>
 #include <string_view>
@@ -7,87 +10,130 @@
 #include <unistd.h>
 #include <vector>
 
-void execvp_array(char* args[]) {
+#ifndef NDEBUG
+#define debug std::cout
+#else
+#define debug false && std::cout
+#endif
+
+void execvp_array(char* args[])
+{
 	args[0] = basename(args[0]);
+	debug << "execvp:";
+	for (int i = 0; args[i] != nullptr; ++i)
+	{
+		debug << " " << args[i];
+	}
+	debug << std::endl;
 	execvp(args[0], args);
-	exit(127);
+	exit(EXIT_FAILURE);
 }
 
-void execvp_vector(std::vector<char*>&& args) {
+void execvp_vector(std::vector<char*>&& args)
+{
 	execvp_array(args.data());
 }
 
-void fork_with(std::function<void(pid_t)> parent, std::function<void()> child) {
+pid_t fork_with(std::function<void()> child, std::function<void(pid_t)> parent)
+{
 	auto const pid = fork();
-	if (pid < 0) {
-		fprintf(stderr, "fork failed\n");
-		exit(127);
+	if (pid < 0)
+	{
+		std::cerr << "fork failed" << std::endl;
+		exit(EXIT_FAILURE);
 	}
-	if (pid == 0) {
-		return parent(pid);
-	} else {
-		return child();
-	}
+	pid == 0 ? child() : parent(pid);
+	return pid;
 }
 
-int main(int argc, char* argv[]) {
+int wait_for(pid_t pid)
+{
+	int status;
+	waitpid(pid, &status, 0);
+	if (status != EXIT_SUCCESS)
+	{
+		exit(status);
+	}
+	return status;
+}
+
+std::array<int, 2> make_pipe()
+{
+	std::array<int, 2> fd;
+	if (pipe(fd.data()) == -1)
+	{
+		std::cerr << "pipe failed" << std::endl;
+		exit(EXIT_FAILURE);
+	}
+	return fd;
+}
+
+int main(int argc, char* argv[])
+{
 	std::string const path(std::string(PATH) + ":" + getenv("PATH"));
 	setenv("PATH", path.c_str(), 1);
-	if (!isatty(fileno(stderr)) || argc < 2) {
+	if (!isatty(fileno(stderr)) || argc < 2)
+	{
 		execvp_array(argv);
 	}
 	std::string_view const verb(argv[1]);
-	if (verb == "run" || verb == "shell") {
+	debug << "verb: " << verb << std::endl;
+	if (verb == "run" || verb == "shell")
+	{
 		fork_with(
-			[argv](auto childPid) {
-				int childStatus;
-				waitpid(childPid, &childStatus, 0);
-				if (childStatus != 0) {
-					exit(childStatus);
-				}
-				execvp_array(argv);
-			},
-			[argc, argv]() {
-				std::vector<char*> args{
-					(char*)"nom",
-					(char*)"build",
-					(char*)"--no-link"
-				};
-				for (int i = 2; i < argc && argv[i] != nullptr; ++i) {
-					std::string_view const arg(argv[i]);
-					if (arg == "--" || arg == "--command")
-						break;
-					args.push_back(argv[i]);
-				}
-				execvp_vector(std::move(args));
-			}
+		    [&]()
+		    {
+			    std::vector<char*> nom_args{
+			        (char*)"nom", (char*)"build", (char*)"--no-link"};
+			    for (int i = 2; i < argc && argv[i] != nullptr; ++i)
+			    {
+				    std::string_view const arg(argv[i]);
+				    if (arg == "--" || arg == "--command") break;
+				    nom_args.push_back(argv[i]);
+			    }
+			    execvp_vector(std::move(nom_args));
+		    },
+		    [&](auto nom_pid)
+		    {
+			    wait_for(nom_pid);
+			    execvp_array(argv);
+		    }
 		);
 	}
-	if (verb == "repl" || verb == "flake" || verb == "--help") {
+	if (verb == "repl" || verb == "flake" || verb == "--help")
+	{
 		execvp_array(argv);
 	}
-	if (verb == "--version") {
-		execvp_vector({(char*) "nom", (char*) "--version"});
+	if (verb == "--version")
+	{
+		execvp_vector({(char*)"nom", (char*)"--version"});
 	}
-	int fd[2];
-	constexpr auto const READ_END = 0;
-	constexpr auto const WRITE_END = 1;
-	if (pipe(fd) == -1) {
-		fprintf(stderr, "pipe failed\n");
-		exit(127);
-	}
+	auto const [nix_stderr_out, nix_stderr_in] = make_pipe();
 	fork_with(
-		[fd](auto nixChildPid) {
-			dup2(fd[READ_END], STDIN_FILENO);
-    		close(fd[WRITE_END]);
-    		close(fd[READ_END]);
-			execvp_vector({(char*) "nom"});
-		},
-		[argv, fd]() {
-			dup2(fd[WRITE_END], STDERR_FILENO);
-			close(fd[READ_END]);
-    		close(fd[WRITE_END]);
-			execvp_array(argv);
-		}
+	    [&]()
+	    {
+		    close(nix_stderr_out);
+		    dup2(nix_stderr_in, STDERR_FILENO);
+		    execvp_array(argv);
+	    },
+	    [&](auto nix_pid)
+	    {
+		    fork_with(
+		        [&]()
+		        {
+			        close(nix_stderr_in);
+			        dup2(nix_stderr_out, STDIN_FILENO);
+			        execvp_vector({(char*)"nom"});
+		        },
+		        [&](auto nom_pid)
+		        {
+			        close(nix_stderr_in);
+			        close(nix_stderr_out);
+			        wait_for(nix_pid);
+			        wait_for(nom_pid);
+			        exit(EXIT_SUCCESS);
+		        }
+		    );
+	    }
 	);
 }

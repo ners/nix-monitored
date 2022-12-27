@@ -4,11 +4,13 @@
 , nix-output-monitor
 }:
 
-stdenv.mkDerivation {
+stdenv.mkDerivation (finalAttrs: {
   pname = "nix-monitored";
-  inherit (nix) version outputs;
+  version = nix.version + lib.optionalString (finalAttrs.src ? version) "-${finalAttrs.src.version}";
+  inherit (nix) outputs;
   src = ./.;
 
+  CXXFLAGS = [ "-O2" "-DNDEBUG" ];
   makeFlags = [
     "BIN=nix"
     "BINDIR=$(out)/bin"
@@ -46,5 +48,4 @@ stdenv.mkDerivation {
     platforms = platforms.unix;
     inherit (nix.meta) outputsToInstall;
   };
-}
-
+})

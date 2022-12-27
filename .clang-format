@@ -1,0 +1,17 @@
+Language: Cpp
+BasedOnStyle: LLVM
+BreakBeforeBraces: Allman
+ColumnLimit: 80
+IndentWidth: 4
+TabWidth: 4
+UseTab: ForIndentation
+SortIncludes: CaseSensitive
+DerivePointerAlignment: false
+PointerAlignment: Left
+AlignAfterOpenBracket: BlockIndent
+AllowShortFunctionsOnASingleLine: None
+AllowShortIfStatementsOnASingleLine: WithoutElse
+AllowShortLoopsOnASingleLine: false
+AllowShortLambdasOnASingleLine: Empty
+IndentAccessModifiers: false
+IndentCaseBlocks: false
