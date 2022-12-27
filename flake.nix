@@ -18,41 +18,56 @@
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = import nixpkgs { inherit system; };
-        nix-monitored = { stdenv, lib, nix, nix-output-monitor }: stdenv.mkDerivation {
-          pname = "nix-monitored";
-          src = ./.;
+        nix-monitored =
+          { stdenv
+          , lib
+          , nix
+          , nix-output-monitor
+          , withNotify ? true
+          , libnotify
+          , nixos-icons
+          }: stdenv.mkDerivation {
+            pname = "nix-monitored";
+            src = ./.;
 
-          inherit (nix) outputs version;
+            inherit (nix) outputs version;
 
-          CXXFLAGS = [ "-O2" "-DNDEBUG" ];
-          makeFlags = [
-            "BIN=nix"
-            "BINDIR=$(out)/bin"
-            "NIXPATH=${lib.makeBinPath [ nix nix-output-monitor ]}"
-          ];
+            CXXFLAGS = [
+              "-O2"
+              "-DNDEBUG"
+            ] ++ lib.optionals withNotify [
+              "-DNOTIFY"
+            ];
+            makeFlags = [
+              "BIN=nix"
+              "BINDIR=$(out)/bin"
+              "NIXPATH=${lib.makeBinPath [ nix nix-output-monitor ]}"
+            ] ++ lib.optionals withNotify [
+              "NOTIFY_ICON=${nixos-icons}/share/icons/hicolor/32x32/apps/nix-snowflake.png"
+            ];
 
-          postInstall = ''
-            ln -s $out/bin/nix $out/bin/nix-build
-            ln -s $out/bin/nix $out/bin/nix-shell
-            ls ${nix} | while read d; do
-              [ -e "$out/$d" ] || ln -s ${nix}/$d $out/$d
-            done
-            ls ${nix}/bin | while read b; do
-              [ -e $out/bin/$b ] || ln -s ${nix}/bin/$b $out/bin/$b
-            done
-          '' + lib.pipe nix.outputs [
-            (builtins.map (o: ''
-              [ -e "''$${o}" ] || ln -s ${nix.${o}} ''$${o}
-            ''))
-            (builtins.concatStringsSep "\n")
-          ];
+            postInstall = ''
+              ln -s $out/bin/nix $out/bin/nix-build
+              ln -s $out/bin/nix $out/bin/nix-shell
+              ls ${nix} | while read d; do
+                [ -e "$out/$d" ] || ln -s ${nix}/$d $out/$d
+              done
+              ls ${nix}/bin | while read b; do
+                [ -e $out/bin/$b ] || ln -s ${nix}/bin/$b $out/bin/$b
+              done
+            '' + lib.pipe nix.outputs [
+              (builtins.map (o: ''
+                [ -e "''$${o}" ] || ln -s ${nix.${o}} ''$${o}
+              ''))
+              (builtins.concatStringsSep "\n")
+            ];
 
-          # Nix will try to fixup the propagated outputs (e.g. nix-dev), to which it has
-          # no write permission when building this derivation.
-          # We don't actually need any fixup, as the derivation we are building is a native Nix build,
-          # and all the propagated outputs have already been fixed up for the Nix derivation.
-          dontFixup = true;
-        };
+            # Nix will try to fixup the propagated outputs (e.g. nix-dev), to which it has
+            # no write permission when building this derivation.
+            # We don't actually need any fixup, as the derivation we are building is a native Nix build,
+            # and all the propagated outputs have already been fixed up for the Nix derivation.
+            dontFixup = true;
+          };
       in
       {
         packages = {
@@ -73,7 +88,6 @@
           src = ./.;
           hooks = {
             nixpkgs-fmt.enable = true;
-            statix.enable = true;
             clang-format.enable = true;
           };
         };

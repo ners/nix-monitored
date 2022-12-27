@@ -1,4 +1,5 @@
 #include <array>
+#include <chrono>
 #include <functional>
 #include <iostream>
 #include <libgen.h>
@@ -16,7 +17,7 @@
 #define debug false && std::cerr
 #endif
 
-void execvp_array(char* args[])
+template <typename T> void execvp_array(T* args)
 {
 	debug << "execvp:";
 	for (int i = 0; args[i] != nullptr; ++i)
@@ -24,13 +25,18 @@ void execvp_array(char* args[])
 		debug << " " << args[i];
 	}
 	debug << std::endl;
-	execvp(args[0], args);
+	execvp(args[0], const_cast<char**>(args));
 	exit(EXIT_FAILURE);
 }
 
-void execvp_vector(std::vector<char*>&& args)
+void execvp_vector(std::vector<std::string_view>&& args)
 {
-	execvp_array(args.data());
+	std::vector<char const*> cargs;
+	for (auto t : args)
+	{
+		cargs.push_back(t.data());
+	}
+	execvp_array(cargs.data());
 }
 
 pid_t fork_with(std::function<void()> child, std::function<void(pid_t)> parent)
@@ -45,14 +51,17 @@ pid_t fork_with(std::function<void()> child, std::function<void(pid_t)> parent)
 	return pid;
 }
 
-int wait_for(pid_t pid)
+int wait_for(
+    pid_t pid, std::function<void(int)> callback =
+                   [](int status)
+               {
+	               if (status != EXIT_SUCCESS) exit(status);
+               }
+)
 {
 	int status;
 	waitpid(pid, &status, 0);
-	if (status != EXIT_SUCCESS)
-	{
-		exit(status);
-	}
+	callback(status);
 	return status;
 }
 
@@ -67,10 +76,47 @@ std::array<int, 2> make_pipe()
 	return fd;
 }
 
+void notify(int status, char* argv[])
+{
+	fork_with(
+	    [&]()
+	    {
+		    execvp_vector(
+		        {"notify-send", "--icon", NOTIFY_ICON, "--urgency",
+		         status == 0 ? "low" : "critical", "Nix",
+		         (status == 0 ? "Build succeeded" : "Build failed")}
+		    );
+	    },
+	    [&](auto const pid)
+	    {
+		    wait_for(pid);
+		    exit(status);
+	    }
+	);
+}
+
 int main(int argc, char* argv[])
 {
 	std::string const path(std::string(PATH) + ":" + getenv("PATH"));
 	setenv("PATH", path.c_str(), 1);
+#ifdef NOTIFY
+	fork_with(
+	    [&]() { /* proceed further as a child */ },
+	    [&](auto const pid)
+	    {
+		    debug << "notify timer started" << std::endl;
+		    auto const start = std::chrono::steady_clock::now();
+		    auto const status =
+		        wait_for(pid, [](auto) { /* do nothing on error */ });
+		    auto const elapsed = std::chrono::steady_clock::now() - start;
+		    debug << "notify timer stopped after "
+		          << std::chrono::duration<double>(elapsed).count() << " s"
+		          << std::endl;
+		    if (elapsed > std::chrono::seconds(2)) notify(status, argv);
+		    exit(status);
+	    }
+	);
+#endif
 	if (!isatty(fileno(stderr)) || argc < 2)
 	{
 		execvp_array(argv);
@@ -101,8 +147,8 @@ int main(int argc, char* argv[])
 		fork_with(
 		    [&]()
 		    {
-			    std::vector<char*> nom_args{
-			        (char*)"nom", (char*)"build", (char*)"--no-link"};
+			    std::vector<std::string_view> nom_args{
+			        "nom", "build", "--no-link"};
 			    for (int i = 2; i < argc && argv[i] != nullptr; ++i)
 			    {
 				    std::string_view const arg(argv[i]);
@@ -130,16 +176,16 @@ int main(int argc, char* argv[])
 		    dup2(nix_stderr_in, STDERR_FILENO);
 		    execvp_array(argv);
 	    },
-	    [&](auto nix_pid)
+	    [&](auto const nix_pid)
 	    {
 		    fork_with(
 		        [&]()
 		        {
 			        close(nix_stderr_in);
 			        dup2(nix_stderr_out, STDIN_FILENO);
-			        execvp_vector({(char*)"nom"});
+			        execvp_vector({"nom"});
 		        },
-		        [&](auto nom_pid)
+		        [&](auto const nom_pid)
 		        {
 			        close(nix_stderr_in);
 			        close(nix_stderr_out);
