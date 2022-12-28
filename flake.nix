@@ -26,6 +26,7 @@
           , withNotify ? stdenv.isLinux
           , libnotify
           , nixos-icons
+          , ...
           }: stdenv.mkDerivation {
             pname = "nix-monitored";
             src = ./.;
