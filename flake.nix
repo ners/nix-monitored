@@ -23,7 +23,7 @@
           , lib
           , nix
           , nix-output-monitor
-          , withNotify ? true
+          , withNotify ? stdenv.isLinux
           , libnotify
           , nixos-icons
           }: stdenv.mkDerivation {
@@ -68,6 +68,7 @@
             # and all the propagated outputs have already been fixed up for the Nix derivation.
             dontFixup = true;
           };
+        lib = pkgs.lib;
       in
       {
         packages = {
@@ -75,7 +76,7 @@
           nix-monitored = pkgs.callPackage nix-monitored { };
         };
 
-        devShells.default = pkgs.mkShell {
+        devShells.default = (pkgs.mkShell.override { stdenv = pkgs.llvmPackages.stdenv; }) {
           name = "nix-monitored";
           inputsFrom = [ self.packages.${system}.default ];
           nativeBuildInputs = with pkgs; [

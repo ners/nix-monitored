@@ -4,6 +4,7 @@
 #include <iostream>
 #include <libgen.h>
 #include <optional>
+#include <sstream>
 #include <stdlib.h>
 #include <string>
 #include <string_view>
@@ -17,12 +18,13 @@
 #define debug false && std::cerr
 #endif
 
-template <typename T> void execvp_array(T* args)
+template <typename T>
+void execvp_array(T* args)
 {
 	debug << "execvp:";
 	for (int i = 0; args[i] != nullptr; ++i)
 	{
-		debug << " " << args[i];
+		debug << " '" << args[i] << "'";
 	}
 	debug << std::endl;
 	execvp(args[0], const_cast<char**>(args));
@@ -32,9 +34,11 @@ template <typename T> void execvp_array(T* args)
 void execvp_vector(std::vector<std::string_view>&& args)
 {
 	std::vector<char const*> cargs;
-	for (auto t : args)
+	for (auto arg : args)
 	{
-		cargs.push_back(t.data());
+		// No need to care about memory, as exec will reclaim it
+		auto s = new std::string(arg);
+		cargs.push_back(s->c_str());
 	}
 	execvp_array(cargs.data());
 }
@@ -52,12 +56,12 @@ pid_t fork_with(std::function<void()> child, std::function<void(pid_t)> parent)
 }
 
 int wait_for(
-    pid_t pid, std::function<void(int)> callback =
-                   [](int status)
-               {
-	               if (status != EXIT_SUCCESS) exit(status);
-               }
-)
+    pid_t pid,
+    std::function<void(int)> callback =
+        [](int const status)
+    {
+	    if (status != EXIT_SUCCESS) exit(status);
+    })
 {
 	int status;
 	waitpid(pid, &status, 0);
@@ -76,32 +80,55 @@ std::array<int, 2> make_pipe()
 	return fd;
 }
 
-void notify(int status, char* argv[])
+void notify(int const status, char* argv[])
 {
+	bool const success = status == EXIT_SUCCESS;
+	debug << "sending " << (success ? "success" : "failure") << " notification"
+	      << std::endl;
+	std::string_view const icon(NOTIFY_ICON);
+	std::string_view const urgency(success ? "low" : "critical");
+	std::stringstream title;
+	title << "Nix build " << (success ? "succeeded" : "failed");
+	std::stringstream message;
+	message << "<span font='monospace'>";
+	for (int i = 0; argv[i] != nullptr; ++i)
+	{
+		message << (i > 0 ? " " : "");
+		bool const has_space =
+		    std::string_view(argv[i]).find(' ') != std::string_view::npos;
+		message << (has_space ? "'" : "") << argv[i] << (has_space ? "'" : "");
+	}
+	message << "</span>";
+
 	fork_with(
 	    [&]()
 	    {
 		    execvp_vector(
-		        {"notify-send", "--icon", NOTIFY_ICON, "--urgency",
-		         status == 0 ? "low" : "critical", "Nix",
-		         (status == 0 ? "Build succeeded" : "Build failed")}
-		    );
+		        {"notify-send",
+		         "--icon",
+		         icon,
+		         "--urgency",
+		         urgency,
+		         title.view(),
+		         message.view()});
 	    },
 	    [&](auto const pid)
 	    {
 		    wait_for(pid);
 		    exit(status);
-	    }
-	);
+	    });
 }
 
 int main(int argc, char* argv[])
 {
 	std::string const path(std::string(PATH) + ":" + getenv("PATH"));
 	setenv("PATH", path.c_str(), 1);
+	// We should use the name of the executable from the PATH, rather than the
+	// full path we were called with.
+	argv[0] = basename(argv[0]);
 #ifdef NOTIFY
 	fork_with(
-	    [&]() { /* proceed further as a child */ },
+	    [&]() { /* run the rest of main as a child */ },
 	    [&](auto const pid)
 	    {
 		    debug << "notify timer started" << std::endl;
@@ -114,14 +141,12 @@ int main(int argc, char* argv[])
 		          << std::endl;
 		    if (elapsed > std::chrono::seconds(2)) notify(status, argv);
 		    exit(status);
-	    }
-	);
+	    });
 #endif
 	if (!isatty(fileno(stderr)) || argc < 2)
 	{
 		execvp_array(argv);
 	}
-	argv[0] = basename(argv[0]);
 	debug << "argv:";
 	for (int i = 0; argv[i] != nullptr; ++i)
 	{
@@ -161,19 +186,18 @@ int main(int argc, char* argv[])
 		    {
 			    wait_for(nom_pid);
 			    execvp_array(argv);
-		    }
-		);
+		    });
 	}
 	if (verb == "repl" || verb == "flake" || verb == "--help")
 	{
 		execvp_array(argv);
 	}
-	auto const [nix_stderr_out, nix_stderr_in] = make_pipe();
+	auto const nix_stderr = make_pipe();
 	fork_with(
 	    [&]()
 	    {
-		    close(nix_stderr_out);
-		    dup2(nix_stderr_in, STDERR_FILENO);
+		    close(nix_stderr[0]);
+		    dup2(nix_stderr[1], STDERR_FILENO);
 		    execvp_array(argv);
 	    },
 	    [&](auto const nix_pid)
@@ -181,19 +205,17 @@ int main(int argc, char* argv[])
 		    fork_with(
 		        [&]()
 		        {
-			        close(nix_stderr_in);
-			        dup2(nix_stderr_out, STDIN_FILENO);
+			        close(nix_stderr[1]);
+			        dup2(nix_stderr[0], STDIN_FILENO);
 			        execvp_vector({"nom"});
 		        },
 		        [&](auto const nom_pid)
 		        {
-			        close(nix_stderr_in);
-			        close(nix_stderr_out);
+			        close(nix_stderr[0]);
+			        close(nix_stderr[1]);
 			        wait_for(nix_pid);
 			        wait_for(nom_pid);
 			        exit(EXIT_SUCCESS);
-		        }
-		    );
-	    }
-	);
+		        });
+	    });
 }
