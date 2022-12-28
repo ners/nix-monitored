@@ -88,7 +88,7 @@ void notify(int const status, char* argv[])
 	std::string_view const icon(NOTIFY_ICON);
 	std::string_view const urgency(success ? "low" : "critical");
 	std::stringstream title;
-	title << "Nix build " << (success ? "succeeded" : "failed");
+	title << "Nix command " << (success ? "succeeded" : "failed");
 	std::stringstream message;
 	message << "<span font='monospace'>";
 	for (int i = 0; argv[i] != nullptr; ++i)
