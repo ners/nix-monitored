@@ -155,18 +155,17 @@ int main(int argc, char* argv[])
 	debug << std::endl;
 	std::string_view const command(argv[0]);
 	std::string_view const verb(argv[1]);
-	if (command == "nix-build" || command == "nix-shell")
+	// Trivial cases: nom supports builds and shells
+	// We also want to print nom's version, not Nix' version.
+	if (command == "nix-build" || verb == "build" || command == "nix-shell" ||
+	    verb == "shell" || verb == "develop" || verb == "--version")
 	{
 		argv[0][1] = 'o';
 		argv[0][2] = 'm';
 		execvp_array(argv);
 	}
-	if (verb == "build" || verb == "shell" || verb == "develop" ||
-	    verb == "--version")
-	{
-		argv[0] = (char*)"nom";
-		execvp_array(argv);
-	}
+	// `nix run` first builds the derivation. We can `nom build` it.
+	// But we don't want nom to wrap around the run, so we `nix run` it.
 	if (verb == "run")
 	{
 		fork_with(
@@ -188,10 +187,12 @@ int main(int argc, char* argv[])
 			    execvp_array(argv);
 		    });
 	}
-	if (verb == "repl" || verb == "flake" || verb == "--help")
+	// These verbs should not be wrapped by nom, as they don't do any building.
+	if (verb == "repl" || verb == "flake" || verb == "log" || verb == "--help")
 	{
 		execvp_array(argv);
 	}
+	// For every other command-verb combo, run `<command> <args> |& nom`
 	auto const nix_stderr = make_pipe();
 	fork_with(
 	    [&]()
