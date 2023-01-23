@@ -76,7 +76,6 @@
       module = { config, pkgs, lib, ... }:
         let
           cfg = config.nix.monitored;
-          package = cfg.package.override { withNotify = cfg.notify; };
         in
         {
           meta.maintainers = [ lib.maintainers.ners ];
@@ -91,20 +90,20 @@
           };
 
           config = lib.mkMerge [
-            {
+            ({
               nixpkgs.overlays = [
-                (self: super: { nix-monitored = self.callPackage nix-monitored; })
+                (self: super: { nix-monitored = self.callPackage nix-monitored { }; })
               ];
-            }
-            (lib.optionalAttrs (cfg.enable) {
-              nix.package = package;
+            })
+            (lib.mkIf cfg.enable rec {
+              nix.package = cfg.package.override { withNotify = cfg.notify; };
               nixpkgs.overlays = [
                 (self: super: {
                   nixos-rebuild = super.nixos-rebuild.override {
-                    nix = package;
+                    nix = nix.package;
                   };
                   nix-direnv = super.nix-direnv.override {
-                    nix = package;
+                    nix = nix.package;
                   };
                 })
               ];
@@ -118,8 +117,43 @@
         default = packages.nix-monitored;
       };
 
-      nixosModule = module;
-      darwinModule = module;
+      nixosModules.default = module;
+      darwinModules.default = module;
+
+      checks.nixosTest = pkgs.nixosTest {
+        name = "nix-monitored";
+        nodes = {
+          withNotify = { pkgs, ... }: {
+            imports = [ module ];
+            environment.systemPackages = with pkgs; [ expect ];
+            nix.monitored.enable = true;
+            nix.monitored.notify = true;
+          };
+          withoutNotify = { pkgs, ... }: {
+            imports = [ nixosModules.default ];
+            environment.systemPackages = with pkgs; [ expect ];
+            nix.monitored.enable = true;
+            nix.monitored.notify = false;
+          };
+        };
+        testScript = let nix-monitored = attrs: packages.nix-monitored.override attrs; in
+          ''
+            start_all()
+
+            machines = [withNotify, withoutNotify]
+            packages = ["${nix-monitored { withNotify = true; }}", "${nix-monitored { withNotify = false; }}"]
+
+            for (machine, package) in zip(machines, packages):
+              for binary in ["nix", "nix-build", "nix-shell"]:
+                actual = machine.succeed(f"readlink $(which {binary})")
+                expected = f"{package}/bin/{binary}"
+                assert expected == actual.strip(), f"{binary} binary is {actual}, expected {expected}"
+
+              actual = machine.succeed("unbuffer nix --version")
+              expected = "nix-output-monitor ${pkgs.nix-output-monitor.version}\nnix (Nix) ${pkgs.nix.version}"
+              assert expected == actual.strip(), f"version string is {actual}, expected {expected}"
+          '';
+      };
 
       devShells.default = (pkgs.mkShell.override { stdenv = pkgs.llvmPackages.stdenv; }) {
         name = "nix-monitored";
