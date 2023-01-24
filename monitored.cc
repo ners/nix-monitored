@@ -31,6 +31,14 @@ void execvp_array(T* args)
 	exit(EXIT_FAILURE);
 }
 
+void exit_with(int const status)
+{
+	// only the 8 least significant bits are returned to the waiting process
+	// https://pubs.opengroup.org/onlinepubs/9699919799/functions/exit.html
+	auto const linux_status = status & 0xFF;
+	exit(status == linux_status ? status : EXIT_FAILURE);
+}
+
 void execvp_vector(std::vector<std::string_view>&& args)
 {
 	std::vector<char const*> cargs;
@@ -49,7 +57,7 @@ pid_t fork_with(std::function<void()> child, std::function<void(pid_t)> parent)
 	if (pid < 0)
 	{
 		std::cerr << "fork failed" << std::endl;
-		exit(EXIT_FAILURE);
+		exit_with(EXIT_FAILURE);
 	}
 	pid == 0 ? child() : parent(pid);
 	return pid;
@@ -60,7 +68,7 @@ int wait_for(
     std::function<void(int)> callback =
         [](int const status)
     {
-	    if (status != EXIT_SUCCESS) exit(status);
+	    if (status != EXIT_SUCCESS) exit_with(status);
     })
 {
 	int status;
@@ -115,7 +123,6 @@ void notify(int const status, char* argv[])
 	    [&](auto const pid)
 	    {
 		    wait_for(pid);
-		    exit(status);
 	    });
 }
 
@@ -137,10 +144,10 @@ int main(int argc, char* argv[])
 		        wait_for(pid, [](auto) { /* do nothing on error */ });
 		    auto const elapsed = std::chrono::steady_clock::now() - start;
 		    debug << "notify timer stopped after "
-		          << std::chrono::duration<double>(elapsed).count() << " s"
-		          << std::endl;
+		          << std::chrono::duration<double>(elapsed).count() << " s "
+		          << "with status " << status << std::endl;
 		    if (elapsed > std::chrono::seconds(2)) notify(status, argv);
-		    exit(status);
+		    exit_with(status);
 	    });
 #endif
 	if (!isatty(fileno(stderr)) || argc < 2)
