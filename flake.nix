@@ -23,6 +23,7 @@
         , lib
         , nix
         , nix-output-monitor
+        , withDebug ? false
         , withNotify ? stdenv.isLinux
         , libnotify
         , nixos-icons
@@ -39,6 +40,7 @@
 
           CXXFLAGS = [
             "-O2"
+          ] ++ lib.optionals (!withDebug) [
             "-DNDEBUG"
           ] ++ lib.optionals withNotify [
             "-DNOTIFY"
