@@ -17,18 +17,18 @@
 
   outputs = inputs: inputs.flake-utils.lib.eachDefaultSystem (system:
     let
-      pkgs = import inputs.nixpkgs { inherit system; };
+      pkgs = inputs.nixpkgs.legacyPackages.${system};
       nix-monitored =
-        { stdenv
+        { gccStdenv
         , lib
         , nix
         , nix-output-monitor
         , withDebug ? false
-        , withNotify ? stdenv.isLinux
+        , withNotify ? gccStdenv.isLinux
         , libnotify
         , nixos-icons
         , ...
-        }: stdenv.mkDerivation {
+        }: gccStdenv.mkDerivation {
           pname = "nix-monitored";
 
           src = inputs.nix-filter.lib {
