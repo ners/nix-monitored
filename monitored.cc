@@ -195,7 +195,8 @@ int main(int argc, char* argv[])
 		    });
 	}
 	// These verbs should not be wrapped by nom, as they don't do any building.
-	if (verb == "repl" || verb == "flake" || verb == "log" || verb == "--help")
+	if (verb == "repl" || verb == "flake" || verb == "log" || verb == "eval" ||
+	    verb == "--help")
 	{
 		execvp_array(argv);
 	}
