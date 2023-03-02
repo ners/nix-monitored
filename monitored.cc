@@ -206,7 +206,13 @@ int main(int argc, char* argv[])
 	    {
 		    close(nix_stderr[0]);
 		    dup2(nix_stderr[1], STDERR_FILENO);
-		    execvp_array(argv);
+		    std::vector<std::string_view> nix_args{
+		        argv[0], "--log-format", "internal-json"};
+		    for (int i = 1; i < argc && argv[i] != nullptr; ++i)
+		    {
+			    nix_args.push_back(argv[i]);
+		    }
+		    execvp_vector(std::move(nix_args));
 	    },
 	    [&](auto const nix_pid)
 	    {
@@ -215,7 +221,7 @@ int main(int argc, char* argv[])
 		        {
 			        close(nix_stderr[1]);
 			        dup2(nix_stderr[0], STDIN_FILENO);
-			        execvp_vector({"nom"});
+			        execvp_vector({"nom", "--json"});
 		        },
 		        [&](auto const nom_pid)
 		        {
