@@ -12,11 +12,8 @@
 #include <unistd.h>
 #include <vector>
 
-#ifndef NDEBUG
-#define debug std::cerr
-#else
-#define debug false && std::cerr
-#endif
+bool debug_enabled = false;
+#define debug debug_enabled&& std::cerr
 
 template <typename T>
 void execvp_array(T* args)
@@ -128,6 +125,16 @@ void notify(int const status, char* argv[])
 
 int main(int argc, char* argv[])
 {
+	for (int i = 0; argv[i] != nullptr; ++i)
+	{
+		std::string_view const arg(argv[i]);
+		if (arg == "--" || arg == "--command") break;
+		if (std::string_view(argv[i]) == "--debug")
+		{
+			debug_enabled = true;
+			debug << "debug output enabled" << std::endl;
+		}
+	}
 	std::string const path(std::string(PATH) + ":" + getenv("PATH"));
 	setenv("PATH", path.c_str(), 1);
 	// We should use the name of the executable from the PATH, rather than the

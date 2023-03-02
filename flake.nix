@@ -23,7 +23,6 @@
         , lib
         , nix
         , nix-output-monitor
-        , withDebug ? false
         , withNotify ? gccStdenv.isLinux
         , libnotify
         , nixos-icons
@@ -40,8 +39,6 @@
 
           CXXFLAGS = [
             "-O2"
-          ] ++ lib.optionals (!withDebug) [
-            "-DNDEBUG"
           ] ++ lib.optionals withNotify [
             "-DNOTIFY"
           ];
@@ -74,6 +71,8 @@
           # We don't actually need any fixup, as the derivation we are building is a native Nix build,
           # and all the propagated outputs have already been fixed up for the Nix derivation.
           dontFixup = true;
+
+          meta.mainProgram = "nix";
         };
       module = { config, pkgs, lib, ... }:
         let
@@ -157,7 +156,7 @@
           '';
       };
 
-      devShells.default = (pkgs.mkShell.override { stdenv = pkgs.llvmPackages.stdenv; }) {
+      devShells.default = (pkgs.mkShell.override { stdenv = pkgs.gccStdenv; }) {
         name = "nix-monitored";
         inputsFrom = [ packages.nix-monitored ];
         nativeBuildInputs = with pkgs; [
