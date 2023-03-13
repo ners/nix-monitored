@@ -125,8 +125,10 @@ void notify(int const status, char* argv[])
 
 int main(int argc, char* argv[])
 {
-	for (int i = 0; argv[i] != nullptr; ++i)
+	for (int i = 1;; ++i)
 	{
+		if (debug_enabled) argv[i-1] = argv[i];
+		if (argv[i] == nullptr) break;
 		std::string_view const arg(argv[i]);
 		if (arg == "--" || arg == "--command") break;
 		if (std::string_view(argv[i]) == "--debug")
