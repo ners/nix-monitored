@@ -131,7 +131,7 @@ int main(int argc, char* argv[])
 		if (argv[i] == nullptr) break;
 		std::string_view const arg(argv[i]);
 		if (arg == "--" || arg == "--command") break;
-		if (std::string_view(argv[i]) == "--debug")
+		if (arg == "--debug")
 		{
 			debug_enabled = true;
 			debug << "debug output enabled" << std::endl;

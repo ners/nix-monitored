@@ -15,7 +15,7 @@
     };
   };
 
-  outputs = inputs: inputs.flake-utils.lib.eachDefaultSystem (system:
+  outputs = inputs: inputs.flake-utils.lib.eachSystem (builtins.attrNames inputs.nixpkgs.legacyPackages) (system:
     let
       pkgs = inputs.nixpkgs.legacyPackages.${system};
       nix-monitored =
