@@ -1,23 +1,17 @@
 {
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    flake-utils.url = "github:numtide/flake-utils";
     nix-filter.url = "github:numtide/nix-filter";
-    flake-compat = {
-      url = "github:edolstra/flake-compat";
-      flake = false;
-    };
-    pre-commit-hooks = {
-      url = "github:cachix/pre-commit-hooks.nix";
-      inputs.nixpkgs.follows = "nixpkgs";
-      inputs.flake-utils.follows = "flake-utils";
-      inputs.flake-compat.follows = "flake-compat";
-    };
   };
 
-  outputs = inputs: inputs.flake-utils.lib.eachSystem (builtins.attrNames inputs.nixpkgs.legacyPackages) (system:
+  outputs = inputs:
     let
-      pkgs = inputs.nixpkgs.legacyPackages.${system};
+      lib = inputs.nixpkgs.lib;
+      foreach = xs: f: with lib; foldr recursiveUpdate { } (
+        if isList xs then map f xs
+        else if isAttrs xs then mapAttrsToList f xs
+        else error "foreach: expected list or attrset"
+      );
       nix-monitored =
         { gccStdenv
         , lib
@@ -25,6 +19,8 @@
         , nix-output-monitor
         , withNotify ? gccStdenv.isLinux
         , libnotify
+        , withDbus ? gccStdenv.isLinux
+        , dbus
         , nixos-icons
         , ...
         }: gccStdenv.mkDerivation {
@@ -45,7 +41,11 @@
           makeFlags = [
             "BIN=nix"
             "BINDIR=$(out)/bin"
-            "NIXPATH=${lib.makeBinPath [ nix nix-output-monitor ]}"
+            "NIXPATH=${lib.makeBinPath (
+              [ nix nix-output-monitor ]
+              ++ lib.optional withNotify libnotify
+              ++ lib.optional withDbus dbus
+            )}"
           ] ++ lib.optionals withNotify [
             "NOTIFY_ICON=${nixos-icons}/share/icons/hicolor/32x32/apps/nix-snowflake.png"
           ];
@@ -112,69 +112,59 @@
           ];
         };
     in
-    rec {
-      packages = {
-        nix-monitored = pkgs.callPackage nix-monitored { };
-        default = packages.nix-monitored;
-      };
+    foreach inputs.nixpkgs.legacyPackages
+      (system: pkgs: {
+        packages.${system}.default = pkgs.callPackage nix-monitored { };
 
+        checks.${system}.nixosTest = pkgs.nixosTest {
+          name = "nix-monitored";
+          nodes = {
+            withNotify = { pkgs, ... }: {
+              imports = [ module ];
+              environment.systemPackages = with pkgs; [ expect ];
+              nix.monitored.enable = true;
+              nix.monitored.notify = true;
+            };
+            withoutNotify = { pkgs, ... }: {
+              imports = [ inputs.self.nixosModules.default ];
+              environment.systemPackages = with pkgs; [ expect ];
+              nix.monitored.enable = true;
+              nix.monitored.notify = false;
+            };
+          };
+          testScript = let nix-monitored = attrs: inputs.self.packages.${system}.default.override attrs; in
+            ''
+              start_all()
+
+              machines = [withNotify, withoutNotify]
+              packages = ["${nix-monitored { withNotify = true; }}", "${nix-monitored { withNotify = false; }}"]
+
+              for (machine, package) in zip(machines, packages):
+                for binary in ["nix", "nix-build", "nix-shell"]:
+                  actual = machine.succeed(f"readlink $(which {binary})")
+                  expected = f"{package}/bin/{binary}"
+                  assert expected == actual.strip(), f"{binary} binary is {actual}, expected {expected}"
+
+                actual = machine.succeed("unbuffer nix --version")
+                expected = "nix-output-monitor ${pkgs.nix-output-monitor.version}\nnix (Nix) ${pkgs.nix.version}"
+                assert expected == actual.strip(), f"version string is {actual}, expected {expected}"
+            '';
+        };
+
+        devShells.${system}.default = (pkgs.mkShell.override { stdenv = pkgs.gccStdenv; }) {
+          name = "nix-monitored";
+          inputsFrom = [ inputs.self.packages.${system}.default ];
+          nativeBuildInputs = with pkgs; [
+            clang-tools
+            nixpkgs-fmt
+          ];
+        };
+
+        formatter.${system} = pkgs.nixpkgs-fmt;
+      })
+    //
+    {
       nixosModules.default = module;
       darwinModules.default = module;
-
-      checks.nixosTest = pkgs.nixosTest {
-        name = "nix-monitored";
-        nodes = {
-          withNotify = { pkgs, ... }: {
-            imports = [ module ];
-            environment.systemPackages = with pkgs; [ expect ];
-            nix.monitored.enable = true;
-            nix.monitored.notify = true;
-          };
-          withoutNotify = { pkgs, ... }: {
-            imports = [ nixosModules.default ];
-            environment.systemPackages = with pkgs; [ expect ];
-            nix.monitored.enable = true;
-            nix.monitored.notify = false;
-          };
-        };
-        testScript = let nix-monitored = attrs: packages.nix-monitored.override attrs; in
-          ''
-            start_all()
-
-            machines = [withNotify, withoutNotify]
-            packages = ["${nix-monitored { withNotify = true; }}", "${nix-monitored { withNotify = false; }}"]
-
-            for (machine, package) in zip(machines, packages):
-              for binary in ["nix", "nix-build", "nix-shell"]:
-                actual = machine.succeed(f"readlink $(which {binary})")
-                expected = f"{package}/bin/{binary}"
-                assert expected == actual.strip(), f"{binary} binary is {actual}, expected {expected}"
-
-              actual = machine.succeed("unbuffer nix --version")
-              expected = "nix-output-monitor ${pkgs.nix-output-monitor.version}\nnix (Nix) ${pkgs.nix.version}"
-              assert expected == actual.strip(), f"version string is {actual}, expected {expected}"
-          '';
-      };
-
-      devShells.default = (pkgs.mkShell.override { stdenv = pkgs.gccStdenv; }) {
-        name = "nix-monitored";
-        inputsFrom = [ packages.nix-monitored ];
-        nativeBuildInputs = with pkgs; [
-          clang-tools
-          nixpkgs-fmt
-        ];
-        inherit (checks.pre-commit) shellHook;
-      };
-
-      checks.pre-commit = inputs.pre-commit-hooks.lib.${system}.run {
-        src = ./.;
-        hooks = {
-          nixpkgs-fmt.enable = true;
-          clang-format.enable = true;
-        };
-      };
-
-      formatter = pkgs.nixpkgs-fmt;
-    }
-  );
+    };
 }
