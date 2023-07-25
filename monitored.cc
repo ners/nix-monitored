@@ -214,7 +214,7 @@ int main(int argc, char* argv[])
 	}
 	// `nix run` first builds the derivation. We can `nom build` it.
 	// But we don't want nom to wrap around the run, so we `nix run` it.
-	if (verb == "run" || verb == "print-dev-env")
+	if (verb == "run")
 	{
 		fork_with(
 		    [&]()
@@ -237,8 +237,7 @@ int main(int argc, char* argv[])
 		unreachable;
 	}
 	// Run `<command> --log-format internal-json <args> |& nom --json`
-	// Currently no such commands are supported, hence the `false`
-	if (false)
+	if (verb == "print-dev-env")
 	{
 		auto const nix_stderr = make_pipe();
 		fork_with(
