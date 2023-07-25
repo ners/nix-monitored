@@ -133,6 +133,29 @@ void notify(int const status, char* argv[])
 	    });
 }
 
+std::string_view get_verb(char* argv[])
+{
+	for (int i = 1; argv[i] != nullptr; ++i)
+	{
+		std::string_view const arg(argv[i]);
+		if (arg == "--extra-experimental-features")
+		{
+			++i;
+			continue;
+		}
+		if (arg == "--version")
+		{
+			return arg;
+		}
+		if (arg.starts_with("--"))
+		{
+			continue;
+		}
+		return arg;
+	}
+	return "";
+}
+
 int main(int argc, char* argv[])
 {
 	std::string const path(std::string(PATH) + ":" + std::getenv("PATH"));
@@ -178,7 +201,7 @@ int main(int argc, char* argv[])
 	}
 	debug << std::endl;
 	std::string_view const command(argv[0]);
-	std::string_view const verb(argv[1]);
+	std::string_view const verb = get_verb(argv);
 	// Trivial cases: nom supports builds and shells
 	// We also want to print nom's version, not Nix' version.
 	if (command == "nix-build" || verb == "build" || command == "nix-shell" ||
