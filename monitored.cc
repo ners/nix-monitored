@@ -197,11 +197,15 @@ int main(int argc, char* argv[])
 	debug << "argv:";
 	for (int i = 0; argv[i] != nullptr; ++i)
 	{
-		debug << " " << argv[i];
+		debug << " '" << argv[i] << "'";
 	}
 	debug << std::endl;
+
 	std::string_view const command(argv[0]);
+	debug << "command: " << command << std::endl;
 	std::string_view const verb = get_verb(argv);
+	debug << "verb: " << verb << std::endl;
+
 	// Trivial cases: nom supports builds and shells
 	// We also want to print nom's version, not Nix' version.
 	if (command == "nix-build" || verb == "build" || command == "nix-shell" ||
@@ -209,6 +213,17 @@ int main(int argc, char* argv[])
 	{
 		argv[0][1] = 'o';
 		argv[0][2] = 'm';
+
+		// Move verb to argv[1], so we always have `nom <verb> <args>`
+		auto prev = const_cast<char*>(verb.data());
+		for (int i = 1; argv[i] != nullptr; ++i)
+		{
+			auto next = argv[i];
+			argv[i] = prev;
+			prev = next;
+			if (prev == verb.data()) break;
+		}
+
 		execvp_array(argv);
 		unreachable;
 	}
