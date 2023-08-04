@@ -178,7 +178,8 @@ std::string_view get_verb(char* argv[])
 	for (int i = 1; argv[i] != nullptr; ++i)
 	{
 		std::string_view const arg(argv[i]);
-		if (arg == "--extra-experimental-features")
+		if (arg == "--experimental-features" ||
+		    arg == "--extra-experimental-features")
 		{
 			++i;
 			continue;
@@ -187,7 +188,7 @@ std::string_view get_verb(char* argv[])
 		{
 			return arg;
 		}
-		if (arg.starts_with("--"))
+		if (arg.starts_with("-"))
 		{
 			continue;
 		}
