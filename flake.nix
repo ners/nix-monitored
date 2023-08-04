@@ -15,12 +15,15 @@
       nix-monitored =
         { gccStdenv
         , lib
+        , cmake
         , nix
         , nix-output-monitor
         , withNotify ? gccStdenv.isLinux
         , libnotify
-        , withDbus ? gccStdenv.isLinux
-        , dbus
+        , pkg-config
+        , glib
+        , gdk-pixbuf
+        , wrapGAppsHook
         , nixos-icons
         , ...
         }: gccStdenv.mkDerivation {
@@ -28,31 +31,36 @@
 
           src = inputs.nix-filter.lib {
             root = ./.;
-            include = [ "monitored.cc" "Makefile" ];
+            include = [ "monitored.cc" "CMakeLists.txt" ];
           };
 
           inherit (nix) version outputs;
 
-          CXXFLAGS = [
-            "-O2"
-          ] ++ lib.optionals withNotify [
-            "-DNOTIFY"
-          ];
-          makeFlags = [
-            "BIN=nix"
-            "BINDIR=$(out)/bin"
-            "NIXPATH=${lib.makeBinPath (
-              [ nix nix-output-monitor ]
-              ++ lib.optional withNotify libnotify
-              ++ lib.optional withDbus dbus
-            )}"
-          ] ++ lib.optionals withNotify [
-            "NOTIFY_ICON=${nixos-icons}/share/icons/hicolor/32x32/apps/nix-snowflake.png"
+          nativeBuildInputs = [
+            cmake
+            pkg-config
           ];
 
+          buildInputs = [
+            libnotify
+            glib
+            gdk-pixbuf
+          ];
+
+          cmakeFlags = [
+            "-DCMAKE_INSTALL_PREFIX=${placeholder "out"}"
+            "-DPATH=${lib.makeBinPath [ nix nix-output-monitor ]}"
+          ] ++ lib.optionals withNotify [
+            "-DNOTIFY=1"
+            "-DNOTIFY_ICON=${nixos-icons}/share/icons/hicolor/32x32/apps/nix-snowflake.png"
+          ];
+
+          VERBOSE = "1";
+
           postInstall = ''
-            ln -s $out/bin/nix $out/bin/nix-build
-            ln -s $out/bin/nix $out/bin/nix-shell
+            ln -s nix-monitored $out/bin/nix
+            ln -s nix-monitored $out/bin/nix-build
+            ln -s nix-monitored $out/bin/nix-shell
             ls ${nix} | while read d; do
               [ -e "$out/$d" ] || ln -s ${nix}/$d $out/$d
             done
@@ -121,15 +129,15 @@
           nodes = {
             withNotify = { pkgs, ... }: {
               imports = [ module ];
-              environment.systemPackages = with pkgs; [ expect ];
               nix.monitored.enable = true;
               nix.monitored.notify = true;
+              environment.systemPackages = with pkgs; [ expect ];
             };
             withoutNotify = { pkgs, ... }: {
               imports = [ inputs.self.nixosModules.default ];
-              environment.systemPackages = with pkgs; [ expect ];
               nix.monitored.enable = true;
               nix.monitored.notify = false;
+              environment.systemPackages = with pkgs; [ expect ];
             };
           };
           testScript = let nix-monitored = attrs: inputs.self.packages.${system}.default.override attrs; in

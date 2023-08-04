@@ -95,43 +95,83 @@ std::array<int, 2> make_pipe()
 	return fd;
 }
 
-void notify(int const status, char* argv[])
+#ifdef NOTIFY
+#include <libnotify/notify.h>
+
+std::chrono::milliseconds get_notify_timeout()
 {
-	bool const success = status == EXIT_SUCCESS;
-	debug << "sending " << (success ? "success" : "failure") << " notification"
-	      << std::endl;
-	std::string_view const icon(NOTIFY_ICON);
-	std::string_view const urgency(success ? "low" : "critical");
-	std::stringstream title;
-	title << "Nix command " << (success ? "succeeded" : "failed");
-	std::stringstream message;
-	message << "<span font='monospace'>";
-	for (int i = 0; argv[i] != nullptr; ++i)
-	{
-		message << (i > 0 ? " " : "");
-		bool const has_space =
-		    std::string_view(argv[i]).find(' ') != std::string_view::npos;
-		message << (has_space ? "'" : "") << argv[i] << (has_space ? "'" : "");
-	}
-	message << "</span>";
+	auto const notify_timeout = getenv("NIX_NOTIFY_TIMEOUT");
+	return notify_timeout ? std::chrono::milliseconds(atoi(notify_timeout))
+	                      : std::chrono::seconds(2);
+}
+
+void notify(char* argv[])
+{
+	auto const timeout = get_notify_timeout();
+	if (timeout < std::chrono::milliseconds(0)) return;
 
 	fork_with(
-	    [&]()
-	    {
-		    execvp_vector(
-		        {"notify-send",
-		         "--icon",
-		         icon,
-		         "--urgency",
-		         urgency,
-		         title.view(),
-		         message.view()});
-	    },
+	    [&]() { /* run the rest of the program as a child */ },
 	    [&](auto const pid)
 	    {
-		    wait_for_success(pid);
+		    debug << "notify timer started" << std::endl;
+		    auto const start = std::chrono::steady_clock::now();
+		    auto const status =
+		        wait_for(pid, [](auto) { /* do nothing on error */ });
+		    auto const elapsed = std::chrono::steady_clock::now() - start;
+		    debug << "notify timer stopped after "
+		          << std::chrono::duration<double>(elapsed).count() << " s "
+		          << "with status " << status << std::endl;
+		    if (elapsed > timeout)
+		    {
+			    bool const success = status == EXIT_SUCCESS;
+			    debug << "sending " << (success ? "success" : "failure")
+			          << " notification" << std::endl;
+			    std::string_view const icon(NOTIFY_ICON);
+			    std::stringstream title;
+			    title << "Nix command " << (success ? "succeeded" : "failed");
+			    std::stringstream message;
+			    message << "<span font='monospace'>";
+			    for (int i = 0; argv[i] != nullptr; ++i)
+			    {
+				    message << (i > 0 ? " " : "");
+				    bool const has_space = std::string_view(argv[i]).find(
+				                               ' ') != std::string_view::npos;
+				    message << (has_space ? "'" : "") << argv[i]
+				            << (has_space ? "'" : "");
+			    }
+			    message << "</span>";
+
+			    if (!notify_init("Nix"))
+			    {
+				    std::cerr << "notify_init failed" << std::endl;
+				    return;
+			    }
+
+			    auto notification = notify_notification_new(
+			        title.view().data(), message.view().data(), icon.data());
+			    if (!notification)
+			    {
+				    std::cerr << "notify_notification_new failed" << std::endl;
+				    return;
+			    }
+
+			    notify_notification_set_urgency(
+			        notification,
+			        success ? NOTIFY_URGENCY_LOW : NOTIFY_URGENCY_CRITICAL);
+
+			    notify_notification_show(notification, nullptr);
+			    g_object_unref(G_OBJECT(notification));
+			    notify_uninit();
+		    }
+		    exit_with(status);
 	    });
 }
+#else
+void notify(char* argv[])
+{
+}
+#endif
 
 std::string_view get_verb(char* argv[])
 {
@@ -153,20 +193,31 @@ std::string_view get_verb(char* argv[])
 		}
 		return arg;
 	}
-	return "";
+	return std::string_view();
+}
+
+std::string_view view_env(auto const name)
+{
+	auto const x = getenv(name);
+	return x ? std::string_view(x) : std::string_view();
 }
 
 int main(int argc, char* argv[])
 {
-	std::string const path(std::string(PATH) + ":" + std::getenv("PATH"));
+	std::string const path(
+	    std::string(PATH) + ":" + std::string(view_env("PATH")));
+
+	debug << "PATH: " << path << std::endl;
 	setenv("PATH", path.c_str(), 1);
 	// We should use the name of the executable from the PATH, rather than the
 	// full path we were called with.
 	argv[0] = basename(argv[0]);
 
-	// Defer to Nix early if we're not in an interactive shell
-	bool const nix_raw = getenv("NIX_RAW") != nullptr;
-	if (!isatty(fileno(stderr)) || argc < 2 || nix_raw)
+	// Defer to Nix early if we're not in an interactive shell or if the user
+	// asks for it
+	auto const nix_monitor = view_env("NIX_MONITOR");
+	if ((!isatty(fileno(stderr)) || argc < 2 || nix_monitor == "disable") &&
+	    nix_monitor != "force")
 	{
 		execvp_array(argv);
 	}
@@ -174,32 +225,14 @@ int main(int argc, char* argv[])
 	debug_enabled = getenv("NIX_DEBUG") != nullptr;
 	debug << "debug output enabled" << std::endl;
 
-	bool const notify_enabled = getenv("NIX_NOTIFY") != nullptr;
-	debug << "notify enabled" << std::endl;
-
-#ifdef NOTIFY
-	notify_enabled&& fork_with(
-	    [&]() { /* run the rest of main as a child */ },
-	    [&](auto const pid)
-	    {
-		    debug << "notify timer started" << std::endl;
-		    auto const start = std::chrono::steady_clock::now();
-		    auto const status =
-		        wait_for(pid, [](auto) { /* do nothing on error */ });
-		    auto const elapsed = std::chrono::steady_clock::now() - start;
-		    debug << "notify timer stopped after "
-		          << std::chrono::duration<double>(elapsed).count() << " s "
-		          << "with status " << status << std::endl;
-		    if (elapsed > std::chrono::seconds(2)) notify(status, argv);
-		    exit_with(status);
-	    });
-#endif
 	debug << "argv:";
 	for (int i = 0; argv[i] != nullptr; ++i)
 	{
 		debug << " '" << argv[i] << "'";
 	}
 	debug << std::endl;
+
+	notify(argv);
 
 	std::string_view const command(argv[0]);
 	debug << "command: " << command << std::endl;
