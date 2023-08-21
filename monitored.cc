@@ -51,6 +51,7 @@ void execvp_vector(std::vector<std::string_view>&& args)
 		auto s = new std::string(arg);
 		cargs.push_back(s->c_str());
 	}
+	cargs.push_back(nullptr);
 	execvp_array(cargs.data());
 }
 
@@ -179,12 +180,12 @@ std::string_view get_verb(char* argv[])
 	{
 		std::string_view const arg(argv[i]);
 		if (arg == "--experimental-features" ||
-		    arg == "--extra-experimental-features")
+		    arg == "--extra-experimental-features" || arg == "--profile")
 		{
 			++i;
 			continue;
 		}
-		if (arg == "--version")
+		if (arg == "--help" || arg == "--version")
 		{
 			return arg;
 		}
@@ -227,7 +228,7 @@ int main(int argc, char* argv[])
 	debug << "debug output enabled" << std::endl;
 
 	debug << "argv:";
-	for (int i = 0; argv[i] != nullptr; ++i)
+	for (int i = 0; i < argc; ++i)
 	{
 		debug << " '" << argv[i] << "'";
 	}
@@ -240,6 +241,19 @@ int main(int argc, char* argv[])
 	std::string_view const verb = get_verb(argv);
 	debug << "verb: " << verb << std::endl;
 
+	auto normalise = [argc, &argv, &verb]()
+	{
+		// Move verb to argv[1], so we always have `nom <verb> <args>`
+		auto prev = const_cast<char*>(verb.data());
+		for (int i = 1; i < argc; ++i)
+		{
+			auto next = argv[i];
+			argv[i] = prev;
+			prev = next;
+			if (prev == verb.data()) break;
+		}
+	};
+
 	// Trivial cases: nom supports builds and shells
 	// We also want to print nom's version, not Nix' version.
 	if (command == "nix-build" || verb == "build" || command == "nix-shell" ||
@@ -248,16 +262,7 @@ int main(int argc, char* argv[])
 		argv[0][1] = 'o';
 		argv[0][2] = 'm';
 
-		// Move verb to argv[1], so we always have `nom <verb> <args>`
-		auto prev = const_cast<char*>(verb.data());
-		for (int i = 1; argv[i] != nullptr; ++i)
-		{
-			auto next = argv[i];
-			argv[i] = prev;
-			prev = next;
-			if (prev == verb.data()) break;
-		}
-
+		normalise();
 		execvp_array(argv);
 		unreachable;
 	}
@@ -268,6 +273,7 @@ int main(int argc, char* argv[])
 		fork_with(
 		    [&]()
 		    {
+			    normalise();
 			    std::vector<std::string_view> nom_args{
 			        "nom", "build", "--no-link"};
 			    for (int i = 2; i < argc && argv[i] != nullptr; ++i)
@@ -285,7 +291,7 @@ int main(int argc, char* argv[])
 		    });
 		unreachable;
 	}
-	// Run `<command> --log-format internal-json <args> |& nom --json`
+	// Run `<command> <verb> --log-format internal-json <args> |& nom --json`
 	if (verb == "print-dev-env")
 	{
 		auto const nix_stderr = make_pipe();
@@ -294,9 +300,10 @@ int main(int argc, char* argv[])
 		    {
 			    close(nix_stderr[0]);
 			    dup2(nix_stderr[1], STDERR_FILENO);
+			    normalise();
 			    std::vector<std::string_view> nix_args{
-			        argv[0], "--log-format", "internal-json"};
-			    for (int i = 1; i < argc && argv[i] != nullptr; ++i)
+			        argv[0], argv[1], "--log-format", "internal-json"};
+			    for (int i = 2; i < argc; ++i)
 			    {
 				    nix_args.push_back(argv[i]);
 			    }
