@@ -10,7 +10,7 @@
       foreach = xs: f: with lib; foldr recursiveUpdate { } (
         if isList xs then map f xs
         else if isAttrs xs then mapAttrsToList f xs
-        else error "foreach: expected list or attrset"
+        else throw "foreach: expected list or attrset but got ${typeOf xs}"
       );
       nix-monitored =
         { gccStdenv
@@ -82,6 +82,9 @@
 
           meta.mainProgram = "nix";
         };
+      overlay = final: prev: {
+        nix-monitored = final.callPackage nix-monitored { };
+      };
       module = { config, pkgs, lib, ... }:
         let
           cfg = config.nix.monitored;
@@ -122,7 +125,7 @@
     in
     foreach inputs.nixpkgs.legacyPackages
       (system: pkgs: {
-        packages.${system}.default = pkgs.callPackage nix-monitored { };
+        packages.${system}.default = (pkgs.extend overlay).nix-monitored;
 
         checks.${system}.nixosTest = pkgs.nixosTest {
           name = "nix-monitored";
@@ -172,6 +175,7 @@
       })
     //
     {
+      overlays.default = overlay;
       nixosModules.default = module;
       darwinModules.default = module;
     };
