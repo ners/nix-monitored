@@ -1,8 +1,5 @@
 {
-  inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    nix-filter.url = "github:numtide/nix-filter";
-  };
+  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
   outputs = inputs:
     let
@@ -29,9 +26,12 @@
         }: gccStdenv.mkDerivation {
           pname = "nix-monitored";
 
-          src = inputs.nix-filter.lib {
+          src = with lib.fileset; toSource {
             root = ./.;
-            include = [ "monitored.cc" "CMakeLists.txt" ];
+            fileset = unions [
+              ./monitored.cc
+              ./CMakeLists.txt
+            ];
           };
 
           inherit (nix) version outputs;
