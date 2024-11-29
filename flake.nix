@@ -20,7 +20,6 @@
         , pkg-config
         , glib
         , gdk-pixbuf
-        , wrapGAppsHook
         , nixos-icons
         , ...
         }: gccStdenv.mkDerivation {

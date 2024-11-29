@@ -225,19 +225,23 @@ int main(int argc, char* argv[])
 	}
 
 	debug_enabled = getenv("NIX_DEBUG") != nullptr;
-	debug << "debug output enabled" << std::endl;
-
-	debug << "argv:";
-	for (int i = 0; i < argc; ++i)
+	if (debug_enabled)
 	{
-		debug << " '" << argv[i] << "'";
+		debug << "debug output enabled" << std::endl;
+
+		debug << "argv:";
+		for (int i = 0; i < argc; ++i)
+		{
+			debug << " '" << argv[i] << "'";
+		}
+		debug << std::endl;
 	}
-	debug << std::endl;
 
 	notify(argv);
 
 	std::string_view const command(argv[0]);
 	debug << "command: " << command << std::endl;
+
 	std::string_view const verb = get_verb(argv);
 	debug << "verb: " << verb << std::endl;
 
@@ -256,19 +260,21 @@ int main(int argc, char* argv[])
 
 	// Trivial cases: nom supports builds and shells
 	// We also want to print nom's version, not Nix' version.
-	if (command == "nix-build" || verb == "build" || command == "nix-shell" ||
-	    verb == "shell" || verb == "develop" || verb == "--version")
+	if (command == "nix" &&
+	        (verb == "build" || verb == "shell" || verb == "develop") ||
+	    command == "nix-build" || command == "nix-shell" || verb == "--version")
 	{
+		if (command == "nix") normalise();
+
 		argv[0][1] = 'o';
 		argv[0][2] = 'm';
 
-		normalise();
 		execvp_array(argv);
 		unreachable;
 	}
 	// `nix run` first builds the derivation. We can `nom build` it.
 	// But we don't want nom to wrap around the run, so we `nix run` it.
-	if (verb == "run")
+	if (command == "nix" && verb == "run")
 	{
 		fork_with(
 		    [&]()
@@ -292,7 +298,7 @@ int main(int argc, char* argv[])
 		unreachable;
 	}
 	// Run `<command> <verb> --log-format internal-json <args> |& nom --json`
-	if (verb == "print-dev-env")
+	if (command == "nix" && verb == "print-dev-env")
 	{
 		auto const nix_stderr = make_pipe();
 		fork_with(
