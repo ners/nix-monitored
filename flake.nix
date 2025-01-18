@@ -92,8 +92,8 @@
           meta.maintainers = [ lib.maintainers.ners ];
 
           options.nix.monitored = with lib; {
-            enable = mkEnableOption (mdDoc "nix-monitored, an improved output formatter for Nix");
-            notify = mkEnableOption (mdDoc "notifications using libnotify") // {
+            enable = mkEnableOption "nix-monitored, an improved output formatter for Nix";
+            notify = mkEnableOption "notifications using libnotify" // {
               default = pkgs.stdenv.isLinux;
               defaultText = "pkgs.stdenv.isLinux";
             };
