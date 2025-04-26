@@ -79,7 +79,9 @@
           # and all the propagated outputs have already been fixed up for the Nix derivation.
           dontFixup = true;
 
-          meta.mainProgram = "nix";
+          meta = {
+            inherit (nix.meta) mainProgram platforms;
+          };
         };
       overlay = final: prev: {
         nix-monitored = final.callPackage nix-monitored { };
