@@ -259,10 +259,9 @@ int main(int argc, char* argv[])
 	};
 
 	// Trivial cases: nom supports builds and shells
-	// We also want to print nom's version, not Nix' version.
 	if (command == "nix" &&
 	        (verb == "build" || verb == "shell" || verb == "develop") ||
-	    command == "nix-build" || command == "nix-shell" || verb == "--version")
+	    command == "nix-build" || command == "nix-shell")
 	{
 		if (command == "nix") normalise();
 
