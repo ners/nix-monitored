@@ -170,6 +170,9 @@
             clang-tools
             nixpkgs-fmt
           ];
+          shellHook = ''
+            cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=1
+          '';
         };
 
         formatter.${system} = pkgs.nixpkgs-fmt;

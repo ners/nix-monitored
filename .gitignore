@@ -1,4 +1,9 @@
 result*
 nix-monitored
 build
-.envrc
+.*
+compile_commands.json
+CMakeFiles
+Makefile
+CMakeCache.txt
+cmake_install.cmake
