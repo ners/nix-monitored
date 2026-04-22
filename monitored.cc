@@ -258,6 +258,16 @@ int main(int argc, char* argv[])
 		}
 	};
 
+  // If invoked by nix-direnv, we don't want to see nom output
+  const auto is_direnv = std::any_of(argv, argv + argc, [](std::string_view const arg) {
+    return arg.contains(".direnv");
+  });
+  if (is_direnv)
+  {
+    execvp_array(argv);
+    unreachable;
+  }
+
 	// Trivial cases: nom supports builds and shells
 	if (command == "nix" &&
 	        (verb == "build" || verb == "shell" || verb == "develop") ||
