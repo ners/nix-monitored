@@ -1,0 +1,7 @@
+[formatter.nixpkgs-fmt]
+command = "nixpkgs-fmt"
+includes = ["*.nix"]
+
+[formatter.clang-format]
+command = "clang-format"
+includes = ["*.cc"]

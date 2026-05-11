@@ -169,13 +169,14 @@
           nativeBuildInputs = with pkgs; [
             clang-tools
             nixpkgs-fmt
+            treefmt
           ];
           shellHook = ''
             cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=1
           '';
         };
 
-        formatter.${system} = pkgs.nixpkgs-fmt;
+        formatter.${system} = pkgs.treefmt;
       })
     //
     {
