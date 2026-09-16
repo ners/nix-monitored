@@ -149,8 +149,11 @@ void notify(char* argv[])
 				    return;
 			    }
 
+			    // Ensure null-termination
+			    std::string const title_str = title.str();
+			    std::string const message_str = message.str();
 			    auto notification = notify_notification_new(
-			        title.view().data(), message.view().data(), icon.data());
+			        title_str.c_str(), message_str.c_str(), icon.data());
 			    if (!notification)
 			    {
 				    std::cerr << "notify_notification_new failed" << std::endl;
