@@ -33,6 +33,21 @@ On NixOS and nix-darwin, simply replace your `nix.package`, like so:
 ```nix
 nix.package = pkgs.nix-monitored;
 ```
+And then import and enable it like this:
+```nix
+{
+  imports = [
+    inputs.nix-monitored.nixosModules.default
+  ];
+
+  nix.monitored.enable = true;
+}
+```
+
+You can also import it in the overlay below by putting this line inside alongside the rest:
+```
+nix-monitored = inputs.nix-monitored.packages.${self.system}.default.override self;
+```
 
 To make it work with `nix-direnv` and `nixos-rebuild`, we can override those packages:
 ```nix
@@ -44,6 +59,7 @@ nixpkgs.overlays = [
     nix-direnv = super.nix-direnv.override {
       nix = super.nix-monitored;
     };
+    # Line above here if you want it.
   })
 ];
 ```
